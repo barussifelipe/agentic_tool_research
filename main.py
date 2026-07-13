@@ -1,7 +1,6 @@
 import os 
 import asyncio
 import shutil
-import sys
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_mcp_adapters.tools import load_mcp_tools
 from langchain.agents import create_agent
@@ -10,23 +9,6 @@ from langchain_huggingface import HuggingFaceEndpoint, ChatHuggingFace
 from langchain_groq import ChatGroq
 from dotenv import load_dotenv
 import agentic_setup
-
-def storing_markdown_output(native_md_response: str):
-    """
-    Stores the markdown output to a file named 'native_agentic_output.md'.
-    If the file already exists, it overwrites the existing content.
-    """
-    file_name = "native_agentic_output.md"
-
-    dir_path = "markdown_outputs"
-
-    os.makedirs(dir_path, exist_ok=True)
-
-    file_path = os.path.join(dir_path, file_name)
-
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write(native_md_response + "\n")
-    print(f"Markdown output saved to {file_path}")
 
 def initialize_model(model_name: str, model_type: str) -> object:
     """
@@ -90,15 +72,43 @@ async def main(model_search, model_parsing):
     }) 
     async with client.session("ddgs") as session:
         mcp_tools = await load_mcp_tools(session)
+        name_url_mapping = name_url_dict()
+        for name, url in name_url_mapping.items():
+            raw_content, total_tokens, output_tokens, input_tokens = await agentic_setup.research_agent(model_search, mcp_tools, name, url)
+            structured_content = await agentic_setup.parsing_agent(model_parsing, total_tokens, output_tokens, input_tokens, raw_content)
+            
+            parsed = agentic_setup.assemble_markdown_output(structured_content)
+            
+            storing_markdown_output(parsed, name)
 
-        raw_content, total_tokens, output_tokens, input_tokens = await agentic_setup.research_agent(model_search, mcp_tools, "Adwisely", "https://adwisely.com")
-        structured_content = await agentic_setup.parsing_agent(model_parsing, total_tokens, output_tokens, input_tokens, raw_content)
-        
-        parsed = agentic_setup.assemble_markdown_output(structured_content)
-        
-        storing_markdown_output(parsed)
+def storing_markdown_output(native_md_response: str, name: str):
+    """
+    Stores the markdown output to a file named 'native_agentic_output.md'.
+    If the file already exists, it overwrites the existing content.
+    """
+    file_name = f"{name}_agentic_output.md"
 
+    dir_path = "markdown_outputs"
 
+    os.makedirs(dir_path, exist_ok=True)
+
+    file_path = os.path.join(dir_path, file_name)
+
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write(native_md_response + "\n")
+    print(f"Markdown output saved to {file_path}")
+
+def name_url_dict() -> dict:
+    """
+    Returns a dictionary mapping names to URLs.
+    """
+    file_name = "input.txt"
+    if not os.path.exists(file_name):
+        raise FileNotFoundError(f"{file_name} not found. Please ensure the file exists in the current directory.")
+    with open(file_name, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    return {line.split()[0]: line.split()[1] for line in lines}
 
 if __name__ == "__main__":
 
