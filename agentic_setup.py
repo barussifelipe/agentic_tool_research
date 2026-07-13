@@ -79,21 +79,24 @@ async def research_agent(raw_model, mcp_tools, app_name: str, app_website: str) 
 
     ai_message = await agent_search.ainvoke(messages)
 
+    if hasattr(ai_message, "usage_metadata") and ai_message.usage_metadata:
+        total_tokens = ai_message.usage_metadata.get("total_tokens", "N/A")
+        output_tokens = ai_message.usage_metadata.get("output_tokens", "N/A")
+        input_tokens = ai_message.usage_metadata.get("input_tokens", "N/A")
+
+        print(f"Research Token Usage: {total_tokens} total, {output_tokens} output, {input_tokens} input")
+
     tool_results = []
     for tool_call in ai_message.tool_calls:
-        print(f"Tool called: {tool_call['name']}")
         selected_tool = next((tool for tool in mcp_tools if tool.name == tool_call['name']), None)
 
-        print(f"Searching for: {tool_call['args']}")
         tool_result = await selected_tool.ainvoke(tool_call['args'])
-
-        print(f"Tool result: {tool_result.content if hasattr(tool_result, 'content') else str(tool_result)}")
 
         tool_results.append(tool_result.content if hasattr(tool_result, 'content') else str(tool_result))
 
-    return tool_results
+    return tool_results, total_tokens, output_tokens, input_tokens
 
-async def parsing_agent(agent, raw_context: str) -> str:
+async def parsing_agent(agent, total_tokens: int, output_tokens: int, input_tokens: int, raw_context: str) -> str:
         
     parser = PydanticOutputParser(pydantic_object=AppDataSchema)
     formatted_instructions = parser.get_format_instructions()
@@ -119,9 +122,21 @@ async def parsing_agent(agent, raw_context: str) -> str:
         partial_variables={"formatted_instructions": formatted_instructions},
     )
 
-    extraction_chain = prompt | agent | parser 
+    extraction_chain = prompt | agent 
+    ai_message = await extraction_chain.ainvoke({"text": raw_context})
 
-    structured_output = await extraction_chain.ainvoke({"text": raw_context})
+    parser_tokens = ai_message.usage_metadata.get("total_tokens", "N/A")
+    parser_output_tokens = ai_message.usage_metadata.get("output_tokens", "N/A")
+    parser_input_tokens = ai_message.usage_metadata.get("input_tokens", "N/A")
+
+    print(f"Parser Token Usage: {parser_tokens} total, {parser_output_tokens} output, {parser_input_tokens} input")
+
+
+    print(f"Total Tokens: {total_tokens + parser_tokens}, Output Tokens: {output_tokens + parser_output_tokens}, Input Tokens: {input_tokens + parser_input_tokens}")
+
+    structured_output = parser.invoke(ai_message)
+    
+    
 
     return structured_output
 
@@ -140,10 +155,8 @@ def assemble_markdown_output(data: dict) -> str:
 
     pydict_data = data.model_dump()
 
-    print(f"Structured Data Dictionary: {pydict_data}")
-
     # Clean cell values of any tabs or line breaks to preserve formatting integrity
-    row_values = [str(val).replace("\t", " ").replace("\n", " ") for val in pydict_data.values()[:-4]]
+    row_values = [str(val).replace("\t", " ").replace("\n", " ") for val in list(pydict_data.values())[:-4]]
     
     tsv_data = "\t".join(headers) + "\n"
     tsv_data += "\t".join(row_values) + "\n"
