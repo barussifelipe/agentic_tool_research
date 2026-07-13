@@ -61,8 +61,8 @@ class AppDataSchema(BaseModel):
 # ==========================================
 
 
-async def reserch_agent(agent, app_name: str, app_website: str) -> str:
-
+async def research_agent(raw_model, mcp_tools, app_name: str, app_website: str) -> str:
+    agent_search = raw_model.bind_tools(mcp_tools, tool_choice="required")
     research_prompt = f"""
     Perform deep research on the company and tool: {app_name}. Core Website: {app_website}.
     Locate their official pricing page, integration directory, corporate headquarters location, and social profiles.
@@ -71,17 +71,27 @@ async def reserch_agent(agent, app_name: str, app_website: str) -> str:
     Dump all raw text details, specific pricing numbers, tiers, features, and direct URLs.
     """
     
-    result = await agent.ainvoke([
-            
-                ("system", "You are a research expert."
+    messages = [("system", "You are a research expert."
                     "CRITICAL INSTRUCTION: You MUST use your search tools to gather up-to-date information FIRST. "
                     "DO NOT answer from your internal memory or training data. "
                     "DO NOT write any summaries or reports until you have successfully executed a web search and read the results."),
                 ("user", research_prompt)]
-    )
-    print(f"Tools called during research agent execution: {result.tool_calls}")
-    print(f"Raw research output: {result.content}")
-    return result.content
+
+    ai_message = await agent_search.ainvoke(messages)
+
+    tool_results = []
+    for tool_call in ai_message.tool_calls:
+        print(f"Tool called: {tool_call['name']}")
+        selected_tool = next((tool for tool in mcp_tools if tool.name == tool_call['name']), None)
+
+        print(f"Searching for: {tool_call['args']}")
+        tool_result = await selected_tool.ainvoke(tool_call['args'])
+
+        print(f"Tool result: {tool_result.content if hasattr(tool_result, 'content') else str(tool_result)}")
+
+        tool_results.append(tool_result.content if hasattr(tool_result, 'content') else str(tool_result))
+
+    return tool_results
 
 async def parsing_agent(agent, raw_context: str) -> str:
         
@@ -128,7 +138,10 @@ def assemble_markdown_output(data: dict) -> str:
     
     # Build Row 1 (Core 34 Columns + Extended Properties Appended appropriately as needed or mapped cleanly)
     # Mapping exact spreadsheet keys
-    row_values = [val for val in data.model.dump().values()]
+
+    pydict_data = data.model_dump()
+
+    row_values = [val for val in pydict_data.values()]
     
     # Clean cell values of any tabs or line breaks to preserve formatting integrity
     row_values = [str(val).replace("\t", " ").replace("\n", " ") for val in row_values]
@@ -144,20 +157,20 @@ def assemble_markdown_output(data: dict) -> str:
 ##SOURCE LIST FORMAT:
 Prices & Scaling Notes:
 """
-    for src in data.get("source_prices_scaling", []):
+    for src in pydict_data.get("source_prices_scaling", []):
         sources_output += f"- {src}\n"
         
     sources_output += "###TIERS AND PRICES:\n"
-    for tier in data.get("source_tiers", []):
+    for tier in pydict_data.get("source_tiers", []):
         sources_output += f"- {tier}\n"
         
     sources_output += "###Social media links:\n"
-    sources_output += f"- LinkedIn: {data.get('linkedin_link', '')}\n"
-    sources_output += f"- YouTube: {data.get('youtube_channel_link', '')}\n"
-    sources_output += f"- Instagram: {data.get('instagram_page_link', '')}\n"
-    sources_output += f"- Twitter (X): {data.get('twitter_x_page_link', '')}\n\n"
+    sources_output += f"- LinkedIn: {pydict_data.get('linkedin_link', '')}\n"
+    sources_output += f"- YouTube: {pydict_data.get('youtube_channel_link', '')}\n"
+    sources_output += f"- Instagram: {pydict_data.get('instagram_page_link', '')}\n"
+    sources_output += f"- Twitter (X): {pydict_data.get('twitter_x_page_link', '')}\n\n"
     
     sources_output += "###Integrations:\n"
-    sources_output += f"- Integrations page: {data.get('source_integrations_page', '')}\n"
+    sources_output += f"- Integrations page: {pydict_data.get('source_integrations_page', '')}\n"
     
     return sources_output

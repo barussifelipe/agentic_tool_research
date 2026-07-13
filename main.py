@@ -91,9 +91,7 @@ async def main(model_search, model_parsing):
     async with client.session("ddgs") as session:
         mcp_tools = await load_mcp_tools(session)
 
-        agent_search = model_search.bind_tools(mcp_tools, tool_choice="required")
-    
-        raw_content = await agentic_setup.reserch_agent(agent_search, "Adwisely", "https://adwisely.com")
+        raw_content = await agentic_setup.research_agent(model_search, mcp_tools, "Adwisely", "https://adwisely.com")
         structured_content = await agentic_setup.parsing_agent(model_parsing, raw_content)
         
         parsed = agentic_setup.assemble_markdown_output(structured_content)
