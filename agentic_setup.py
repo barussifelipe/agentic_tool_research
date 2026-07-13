@@ -79,15 +79,14 @@ async def reserch_agent(agent, app_name: str, app_website: str) -> str:
                     "DO NOT write any summaries or reports until you have successfully executed a web search and read the results."),
                 ("user", research_prompt)]
     )
-    print(f"Tokens used for research agent: {result.token_usage.usage_metadata.total_tokens}, input tokens: {result.token_usage.usage_metadata.input_tokens}, output tokens: {result.token_usage.usage_metadata.output_tokens}")
     print(f"Tools called during research agent execution: {result.tool_calls}")
-    return result["messages"][-1].content 
+    print(f"Raw research output: {result.content}")
+    return result.content
 
 async def parsing_agent(agent, raw_context: str) -> str:
         
     parser = PydanticOutputParser(pydantic_object=AppDataSchema)
     formatted_instructions = parser.get_format_instructions()
-    print(f"Formatted Instructions for Parsing Agent: {formatted_instructions}")
 
     structurer_prompt = """
     "You are a Structurer Agent with expertise in SaaS product analysis. Your task is to extract and structure data into a strict JSON schema. \n 
@@ -129,17 +128,7 @@ def assemble_markdown_output(data: dict) -> str:
     
     # Build Row 1 (Core 34 Columns + Extended Properties Appended appropriately as needed or mapped cleanly)
     # Mapping exact spreadsheet keys
-    row_values = [
-        data.get("name", ""), data.get("tagline", ""), data.get("slug", ""), data.get("category", ""),
-        data.get("description", ""), data.get("best_for", ""), data.get("setup_complexity", ""), data.get("website", ""),
-        data.get("affiliate_url", ""), data.get("pricing_model", ""), data.get("starting_price", ""), f"{data.get("amount", 0.0):.2f}",
-        f"{data.get("amount_yearly", 0.0):.2f}", data.get("currency", "EUR"), data.get("pros", ""), data.get("cons", ""),
-        data.get("integrations", ""), data.get("alternatives", ""), data.get("platforms", ""), data.get("flags", ""),
-        data.get("deployment", ""), data.get("role_categories", ""), data.get("company_size", ""), data.get("su_category", ""),
-        data.get("logo_url", ""), data.get("free_version_and_trial", ""), data.get("pricing_link", ""), data.get("resell_info_page", ""),
-        data.get("resell_apply_form_call", ""), data.get("reseller_management_portal", ""), data.get("payout_gate", ""),
-        data.get("pipeline_kanban", ""), data.get("country", ""), data.get("city", "")
-    ]
+    row_values = [val for val in data.model.dump().values()]
     
     # Clean cell values of any tabs or line breaks to preserve formatting integrity
     row_values = [str(val).replace("\t", " ").replace("\n", " ") for val in row_values]
