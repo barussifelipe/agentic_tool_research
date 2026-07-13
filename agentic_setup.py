@@ -122,7 +122,6 @@ async def parsing_agent(agent, raw_context: str) -> str:
     extraction_chain = prompt | agent | parser 
 
     structured_output = await extraction_chain.ainvoke({"text": raw_context})
-    print(structured_output)
 
     return structured_output
 
@@ -133,7 +132,7 @@ def assemble_markdown_output(data: dict) -> str:
         "Affiliate URL", "Pricing Model", "Starting Price", "Amount", "Amount Yearly", "Currency", "Pros", 
         "Cons", "Integrations", "Alternatives", "Platforms", "Flags", "Deployment", "Role Categories", 
         "Company Size", "SU.category", "Logo URL", "Free Version & Trial", "Pricing Link", "Resell Info Page", 
-        "Resell Apply Form/Call", "Reseller Management Portal", "Payout Gate", "Pipeline Kanban", "Country", "City"
+        "Resell Apply Form/Call", "Reseller Management Portal", "Payout Gate", "Pipeline Kanban", "Country", "City", "Scaling Notes", "LinkedIn Link", "YouTube Channel Link", "Instagram Page Link", "Twitter (X) Page Link"
     ]
     
     # Build Row 1 (Core 34 Columns + Extended Properties Appended appropriately as needed or mapped cleanly)
@@ -141,18 +140,17 @@ def assemble_markdown_output(data: dict) -> str:
 
     pydict_data = data.model_dump()
 
-    row_values = [val for val in pydict_data.values()]
-    
+    print(f"Structured Data Dictionary: {pydict_data}")
+
     # Clean cell values of any tabs or line breaks to preserve formatting integrity
-    row_values = [str(val).replace("\t", " ").replace("\n", " ") for val in row_values]
+    row_values = [str(val).replace("\t", " ").replace("\n", " ") for val in pydict_data.values()[:-4]]
     
-    markdown_table = "| " + " | ".join(headers) + " |\n"
-    markdown_table += "| " + " | ".join(["---"] * len(headers)) + " |\n"
-    markdown_table += "| " + "\t".join(row_values) + " |\n" # User requested columns separated by tabs within row
-    
+    tsv_data = "\t".join(headers) + "\n"
+    tsv_data += "\t".join(row_values) + "\n"
+
     # Source Section Assembly
     sources_output = f"""
-{markdown_table}
+{tsv_data}
 
 ##SOURCE LIST FORMAT:
 Prices & Scaling Notes:

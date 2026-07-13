@@ -14,7 +14,7 @@ import agentic_setup
 def storing_markdown_output(native_md_response: str):
     """
     Stores the markdown output to a file named 'native_agentic_output.md'.
-    If the file already exists, it appends the new content to the end of the file.
+    If the file already exists, it overwrites the existing content.
     """
     file_name = "native_agentic_output.md"
 
@@ -24,7 +24,7 @@ def storing_markdown_output(native_md_response: str):
 
     file_path = os.path.join(dir_path, file_name)
 
-    with open(file_path, "a", encoding="utf-8") as f:
+    with open(file_path, "w", encoding="utf-8") as f:
         f.write(native_md_response + "\n")
     print(f"Markdown output saved to {file_path}")
 
@@ -95,7 +95,8 @@ async def main(model_search, model_parsing):
         structured_content = await agentic_setup.parsing_agent(model_parsing, raw_content)
         
         parsed = agentic_setup.assemble_markdown_output(structured_content)
-        print(f"Final Parsed Content: {parsed}")
+        
+        storing_markdown_output(parsed)
 
 
 
