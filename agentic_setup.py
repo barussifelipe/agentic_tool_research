@@ -1,10 +1,10 @@
 import os
 import json
+import sys
 from typing import List
 from pydantic import BaseModel, Field 
-from langchain_mcp_adapters.client import MultiServerMCPClient
-from langchain_mcp_adapters.tools import load_mcp_tools
-from langchain.agents import create_agent
+from langchain_core.output_parsers import PydanticOutputParser
+from langchain_core.prompts import PromptTemplate
 # ==========================================
 # DEFINE THE STRICT DATA SCHEMA
 # ==========================================
@@ -59,51 +59,63 @@ class AppDataSchema(BaseModel):
 # ==========================================
 # AGENT DEFINITIONS
 # ==========================================
-async def run_native_agent_pipeline(model, app_name: str, app_website: str) -> str:
-    # 0. MCP server setup and tool loading 
-    client = MultiServerMCPClient({
-        "ddgs": {
-            "command": "ddgs",
-            "args": ["mcp"]
-        }
-    }) 
-    async with client.session("ddgs") as session:
-        mcp_tools = await load_mcp_tools(session)
 
-        agent = create_agent(model, mcp_tools)
 
-        # 1. The Researcher Agent (Raw Data Extraction)
+async def reserch_agent(agent, app_name: str, app_website: str) -> str:
 
-        research_prompt = f"""
-        Perform deep research on the company and tool: {app_name}. Core Website: {app_website}.
-        Locate their official pricing page, integration directory, corporate headquarters location, and social profiles.
-        CRITICAL FLAGSHIP RULE: If this brand has multiple products, identify the SINGLE highest-revenue/flagship product.
-        Extract data exclusively for this flagship product. 
-        Dump all raw text details, specific pricing numbers, tiers, features, and direct URLs.
-        """
-        
+    research_prompt = f"""
+    Perform deep research on the company and tool: {app_name}. Core Website: {app_website}.
+    Locate their official pricing page, integration directory, corporate headquarters location, and social profiles.
+    CRITICAL FLAGSHIP RULE: If this brand has multiple products, identify the SINGLE highest-revenue/flagship product.
+    Extract data exclusively for this flagship product. 
+    Dump all raw text details, specific pricing numbers, tiers, features, and direct URLs.
+    """
+    
+    result = await agent.ainvoke([
+            
+                ("system", "You are a research expert."
+                    "CRITICAL INSTRUCTION: You MUST use your search tools to gather up-to-date information FIRST. "
+                    "DO NOT answer from your internal memory or training data. "
+                    "DO NOT write any summaries or reports until you have successfully executed a web search and read the results."),
+                ("user", research_prompt)]
+    )
+    print(f"Tokens used for research agent: {result.token_usage.usage_metadata.total_tokens}, input tokens: {result.token_usage.usage_metadata.input_tokens}, output tokens: {result.token_usage.usage_metadata.output_tokens}")
+    print(f"Tools called during research agent execution: {result.tool_calls}")
+    return result["messages"][-1].content 
 
-        # 2. The Structurer Agent (JSON Mapping via Pydantic Schema)
+async def parsing_agent(agent, raw_context: str) -> str:
         
-        structurer_prompt = f"""
-        You are the Structurer Agent. Take the raw data payload below and map it strictly into the required JSON schema structure.
-        
-        CRITICAL RULES:
-        1. Focus only on the main flagship product found in the context.
-        2. Currency MUST be mapped as the one found on the official pricing page. Do not convert numerical figures; extract numerical amounts exactly as seen on the official page.
-        3. Respect text format requirements (e.g., specific structures for 'Best For' and 'Setup Complexity').
-        4. Integrations must strictly be direct, native integrations found in the text. Do not list Zapier libraries.
+    parser = PydanticOutputParser(pydantic_object=AppDataSchema)
+    formatted_instructions = parser.get_format_instructions()
+    print(f"Formatted Instructions for Parsing Agent: {formatted_instructions}")
 
-        Raw Data Context to Parse:
-        {raw_context}
-        """
-        
-        parsed_json = json.loads(structurer_response.output_text)
-        
-        # 3. The Critic / Deterministic Code Layer
-        # Validate rules programmatically instead of relying on an LLM loop to guarantee compliance
-        
-    return assemble_markdown_output(parsed_json)
+    structurer_prompt = """
+    "You are a Structurer Agent with expertise in SaaS product analysis. Your task is to extract and structure data into a strict JSON schema. \n 
+    Take the raw data payload below and map it strictly into the required JSON schema structure.\n
+    
+    CRITICAL RULES:
+    1. Focus only on the main flagship product found in the context.\n
+    2. Currency MUST be mapped as the one found on the official pricing page. Do not convert numerical figures; extract numerical amounts exactly as seen on the official page.\n
+    3. Respect text format requirements (e.g., specific structures for 'Best For' and 'Setup Complexity').\n
+    4. Integrations must strictly be direct, native integrations found in the text. Do not list Zapier libraries.\n
+    --- Format ---
+    {formatted_instructions}\n\n
+    --- Raw Data Context to Parse ---:\n
+    {text}\n
+    """
+
+    prompt = PromptTemplate(
+        template = structurer_prompt,
+        input_variables=["text"], 
+        partial_variables={"formatted_instructions": formatted_instructions},
+    )
+
+    extraction_chain = prompt | agent | parser 
+
+    structured_output = await extraction_chain.ainvoke({"text": raw_context})
+    print(structured_output)
+
+    return structured_output
 
 
 def assemble_markdown_output(data: dict) -> str:
